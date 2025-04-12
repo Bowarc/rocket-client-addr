@@ -74,72 +74,50 @@ fn is_local_ip(addr: &IpAddr) -> bool {
 }
 
 fn from_request(request: &Request<'_>) -> Option<ClientAddr> {
-    let (remote_ip, ok) = match request.remote() {
-        Some(addr) => {
-            let ip = addr.ip();
+    let remote_ip = if let Some(addr) = request.remote() {
+        let ip = addr.ip();
 
-            let ok = !is_local_ip(&ip);
+        if !is_local_ip(&ip) {
+            return Some(ClientAddr { ip });
+        }
 
-            (Some(ip), ok)
-        },
-        None => (None, false),
+        Some(ip)
+    } else {
+        None
     };
 
-    if ok {
-        match remote_ip {
-            Some(ip) => Some(ClientAddr {
-                ip,
-            }),
-            None => unreachable!(),
-        }
-    } else {
-        let forwarded_for_ip: Option<&str> = request.headers().get("x-forwarded-for").next(); // Only fetch the first one.
+    let Some(forwarded_for_ip) = request.headers().get("x-forwarded-for").next()
+    /* Only fetch the first one. */
+    else {
+        match request.real_ip() {
+            Some(real_ip) => return Some(ClientAddr { ip: real_ip }),
+            None => return remote_ip.map(|ip| ClientAddr { ip }),
+        };
+    };
 
-        match forwarded_for_ip {
-            Some(forwarded_for_ip) => {
-                let forwarded_for_ips = forwarded_for_ip.rsplit(',');
+    let forwarded_for_ips = forwarded_for_ip.rsplit(',');
 
-                let mut last_ip = None;
+    let mut last_ip = None;
 
-                for forwarded_for_ip in forwarded_for_ips {
-                    match forwarded_for_ip.trim().parse::<IpAddr>() {
-                        Ok(ip) => {
-                            last_ip = Some(ip);
+    for forwarded_for_ip in forwarded_for_ips {
+        let Ok(ip) = forwarded_for_ip.trim().parse::<IpAddr>() else { break };
 
-                            if !is_local_ip(&ip) {
-                                break;
-                            }
-                        },
-                        Err(_) => {
-                            break;
-                        },
-                    }
-                }
+        last_ip = Some(ip);
 
-                match last_ip {
-                    Some(ip) => Some(ClientAddr {
-                        ip,
-                    }),
-                    None => match request.real_ip() {
-                        Some(real_ip) => Some(ClientAddr {
-                            ip: real_ip
-                        }),
-                        None => remote_ip.map(|ip| ClientAddr {
-                            ip,
-                        }),
-                    },
-                }
-            },
-            None => match request.real_ip() {
-                Some(real_ip) => Some(ClientAddr {
-                    ip: real_ip
-                }),
-                None => remote_ip.map(|ip| ClientAddr {
-                    ip,
-                }),
-            },
+        if !is_local_ip(&ip) {
+            break;
         }
     }
+
+    if let Some(ip) = last_ip {
+        return Some(ClientAddr { ip });
+    }
+
+    if let Some(real_ip) = request.real_ip() {
+        return Some(ClientAddr { ip: real_ip });
+    }
+
+    remote_ip.map(|ip| ClientAddr { ip })
 }
 
 #[rocket::async_trait]

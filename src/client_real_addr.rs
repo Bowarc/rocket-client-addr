@@ -14,37 +14,27 @@ pub struct ClientRealAddr {
 }
 
 fn from_request(request: &Request<'_>) -> Option<ClientRealAddr> {
-    match request.real_ip() {
-        Some(ip) => Some(ClientRealAddr {
-            ip,
-        }),
-        None => {
-            let forwarded_for_ip: Option<&str> = request.headers().get("x-forwarded-for").next(); // Only fetch the first one.
-
-            match forwarded_for_ip {
-                Some(forwarded_for_ip) => {
-                    let forwarded_for_ip = forwarded_for_ip.split(',').next(); // Only fetch the first one.
-
-                    match forwarded_for_ip {
-                        Some(forwarded_for_ip) => match forwarded_for_ip.trim().parse::<IpAddr>() {
-                            Ok(ip) => Some(ClientRealAddr {
-                                ip,
-                            }),
-                            Err(_) => request.remote().map(|addr| ClientRealAddr {
-                                ip: addr.ip()
-                            }),
-                        },
-                        None => request.remote().map(|addr| ClientRealAddr {
-                            ip: addr.ip()
-                        }),
-                    }
-                },
-                None => request.remote().map(|addr| ClientRealAddr {
-                    ip: addr.ip()
-                }),
-            }
-        },
+    if let Some(ip) = request.real_ip() {
+        return Some(ClientRealAddr { ip });
     }
+
+    let Some(forwarded_for_ip) = request.headers().get("x-forwarded-for").next()
+    /* Only fetch the first one. */
+    else {
+        return request.remote().map(|addr| ClientRealAddr { ip: addr.ip() });
+    };
+
+    let Some(forwarded_for_ip) = forwarded_for_ip.split(',').next()
+    /* Only fetch the first one. */
+    else {
+        return request.remote().map(|addr| ClientRealAddr { ip: addr.ip() });
+    };
+
+    if let Ok(ip) = forwarded_for_ip.trim().parse::<IpAddr>() {
+        return Some(ClientRealAddr { ip });
+    }
+
+    request.remote().map(|addr| ClientRealAddr { ip: addr.ip() })
 }
 
 #[rocket::async_trait]
