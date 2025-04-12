@@ -7,7 +7,7 @@ use rocket::{
 };
 
 /// The request guard used for getting an IP address from a client.
-#[derive(Debug, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ClientAddr {
     /// IP address from a client.
     pub ip: IpAddr,
@@ -177,5 +177,19 @@ impl ClientAddr {
             IpAddr::V4(ipv4) => ipv4.to_ipv6_mapped().to_string(),
             IpAddr::V6(ipv6) => ipv6.to_string(),
         }
+    }
+}
+
+impl std::fmt::Debug for ClientAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Transparent
+        std::fmt::Debug::fmt(&self.ip, f)
+    }
+}
+
+impl std::fmt::Display for ClientAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Transparent
+        std::fmt::Display::fmt(&self.ip, f)
     }
 }
